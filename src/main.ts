@@ -5,9 +5,6 @@ import {
   FileView,
   Platform,
   WorkspaceLeaf,
-  TFile,
-  setIcon,
-  Notice,
   type App,
   type ViewState,
   type SettingDefinitionItem,
@@ -16,13 +13,11 @@ import {
 interface MobileTabBarSettings {
   closeOnLongPress: boolean;
   closeOnSwipeUp: boolean;
-  plusButtonNote: string;
 }
 
 const DEFAULT_SETTINGS: MobileTabBarSettings = {
   closeOnLongPress: true,
   closeOnSwipeUp: false,
-  plusButtonNote: '',
 };
 
 export default class MobileTabBar extends Plugin {
@@ -42,46 +37,9 @@ export default class MobileTabBar extends Plugin {
     await this.saveData(this.settings);
   }
 
-  private async openConfiguredNote() {
-    const notePath = this.settings.plusButtonNote.trim();
-    if (!notePath) {
-      new Notice('Please specify a note in mobile tab bar v2 settings.');
-      return;
-    }
-
-    let file = this.app.metadataCache.getFirstLinkpathDest(notePath, '');
-    if (!file) {
-      const abstractFile = this.app.vault.getAbstractFileByPath(notePath);
-      if (abstractFile instanceof TFile) {
-        file = abstractFile;
-      } else {
-        const withMd = this.app.vault.getAbstractFileByPath(notePath.endsWith('.md') ? notePath : `${notePath}.md`);
-        if (withMd instanceof TFile) {
-          file = withMd;
-        }
-      }
-    }
-
-    const leaf = this.app.workspace.getLeaf('tab');
-    if (file) {
-      await leaf.openFile(file);
-    } else {
-      await this.app.workspace.openLinkText(notePath, '', 'tab');
-    }
-  }
-
   private setupTabBar() {
     const bar = createDiv({ cls: 'mtb-tab-bar' });
     const dot = createSpan({ cls: 'mtb-save-dot' });
-    const addBtn = createDiv({ cls: 'mtb-add-tab-btn' });
-    setIcon(addBtn, 'plus');
-    addBtn.setAttribute('aria-label', 'Open note');
-
-    addBtn.addEventListener('click', (e: MouseEvent) => {
-      e.stopPropagation();
-      void this.openConfiguredNote();
-    });
-
     let longPressTimer: number | null = null;
     let startX = 0;
     let startY = 0;
@@ -221,19 +179,11 @@ export default class MobileTabBar extends Plugin {
         titleContainer.hide();
         titleContainer.classList.add('mtb-hidden');
         const header = container.querySelector('.view-header');
-        if (header) {
-          if (!header.contains(bar)) {
-            if (bar.parentElement) bar.remove();
-            const actions = header.querySelector('.view-actions');
-            if (actions) header.insertBefore(bar, actions);
-            else header.appendChild(bar);
-          }
-          if (!header.contains(addBtn)) {
-            if (addBtn.parentElement) addBtn.remove();
-            const actions = header.querySelector('.view-actions');
-            if (actions) header.insertBefore(addBtn, actions);
-            else header.appendChild(addBtn);
-          }
+        if (header && !header.contains(bar)) {
+          if (bar.parentElement) bar.remove();
+          const actions = header.querySelector('.view-actions');
+          if (actions) header.insertBefore(bar, actions);
+          else header.appendChild(bar);
         }
       }
     };
@@ -263,7 +213,6 @@ export default class MobileTabBar extends Plugin {
     this.register(() => {
       obs.disconnect();
       bar.remove();
-      addBtn.remove();
       activeDocument.querySelectorAll<HTMLElement>('.mtb-hidden').forEach(el => {
         el.show();
         el.classList.remove('mtb-hidden');
@@ -282,15 +231,6 @@ class MobileTabBarSettingTab extends PluginSettingTab {
 
   getSettingDefinitions(): SettingDefinitionItem[] {
     return [
-      {
-        name: 'Plus button note',
-        desc: 'Specify the name or path of the note to open when clicking the circular plus button.',
-        control: {
-          type: 'text',
-          key: 'plusButtonNote',
-          defaultValue: DEFAULT_SETTINGS.plusButtonNote,
-        },
-      },
       {
         name: 'Swipe up to close tab',
         desc: 'Swipe up on a tab in the mobile tab bar to close it.',
@@ -315,19 +255,6 @@ class MobileTabBarSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-
-    new Setting(containerEl)
-      .setName('Plus button note')
-      .setDesc('Specify the note name or vault path to open when clicking the circular plus button.')
-      .addText((text) =>
-        text
-          .setPlaceholder('E.g. Inbox, daily note, or file path')
-          .setValue(this.plugin.settings.plusButtonNote)
-          .onChange(async (value) => {
-            this.plugin.settings.plusButtonNote = value;
-            await this.plugin.saveSettings();
-          })
-      );
 
     new Setting(containerEl)
       .setName('Swipe up to close tab')
