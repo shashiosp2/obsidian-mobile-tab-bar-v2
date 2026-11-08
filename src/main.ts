@@ -1,14 +1,91 @@
-import { Plugin, FileView, Platform, WorkspaceLeaf, type ViewState } from 'obsidian';
+import {
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  FileView,
+  Platform,
+  WorkspaceLeaf,
+  TFile,
+  setIcon,
+  Notice,
+  type App,
+  type ViewState,
+  type SettingDefinitionItem,
+} from 'obsidian';
+
+interface MobileTabBarSettings {
+  closeOnLongPress: boolean;
+  closeOnSwipeUp: boolean;
+  plusButtonNote: string;
+}
+
+const DEFAULT_SETTINGS: MobileTabBarSettings = {
+  closeOnLongPress: true,
+  closeOnSwipeUp: false,
+  plusButtonNote: '',
+};
 
 export default class MobileTabBar extends Plugin {
-  onload() {
+  settings: MobileTabBarSettings = DEFAULT_SETTINGS;
+
+  async onload() {
+    await this.loadSettings();
+    this.addSettingTab(new MobileTabBarSettingTab(this.app, this));
     if (Platform.isMobile) this.setupTabBar();
+  }
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MobileTabBarSettings>);
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  private async openConfiguredNote() {
+    const notePath = this.settings.plusButtonNote.trim();
+    if (!notePath) {
+      new Notice('Please specify a note in mobile tab bar v2 settings.');
+      return;
+    }
+
+    let file = this.app.metadataCache.getFirstLinkpathDest(notePath, '');
+    if (!file) {
+      const abstractFile = this.app.vault.getAbstractFileByPath(notePath);
+      if (abstractFile instanceof TFile) {
+        file = abstractFile;
+      } else {
+        const withMd = this.app.vault.getAbstractFileByPath(notePath.endsWith('.md') ? notePath : `${notePath}.md`);
+        if (withMd instanceof TFile) {
+          file = withMd;
+        }
+      }
+    }
+
+    const leaf = this.app.workspace.getLeaf('tab');
+    if (file) {
+      await leaf.openFile(file);
+    } else {
+      await this.app.workspace.openLinkText(notePath, '', 'tab');
+    }
   }
 
   private setupTabBar() {
     const bar = createDiv({ cls: 'mtb-tab-bar' });
     const dot = createSpan({ cls: 'mtb-save-dot' });
+    const addBtn = createDiv({ cls: 'mtb-add-tab-btn' });
+    setIcon(addBtn, 'plus');
+    addBtn.setAttribute('aria-label', 'Open note');
+
+    addBtn.addEventListener('click', (e: MouseEvent) => {
+      e.stopPropagation();
+      void this.openConfiguredNote();
+    });
+
     let longPressTimer: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    let isSwiping = false;
 
     const cancelLongPress = () => {
       if (longPressTimer !== null) {
@@ -70,21 +147,63 @@ export default class MobileTabBar extends Plugin {
           syncDot();
         }
 
-        tab.addEventListener('touchstart', () => {
+        tab.addEventListener('touchstart', (e: TouchEvent) => {
           cancelLongPress();
-          longPressTimer = window.setTimeout(() => {
-            longPressTimer = null;
+          isSwiping = false;
+          const touch = e.touches[0];
+          if (touch) {
+            startX = touch.clientX;
+            startY = touch.clientY;
+          }
+
+          if (this.settings.closeOnLongPress) {
+            longPressTimer = window.setTimeout(() => {
+              longPressTimer = null;
+              leaf.detach();
+              rebuild();
+            }, 500);
+          }
+        });
+
+        tab.addEventListener('touchmove', (e: TouchEvent) => {
+          const touch = e.touches[0];
+          if (!touch) return;
+          const deltaX = touch.clientX - startX;
+          const deltaY = touch.clientY - startY;
+
+          // If moved horizontally or vertically beyond threshold, cancel long press
+          if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+            cancelLongPress();
+          }
+
+          if (this.settings.closeOnSwipeUp && deltaY < -30 && Math.abs(deltaY) > Math.abs(deltaX) * 1.5) {
+            isSwiping = true;
+          }
+        });
+
+        tab.addEventListener('touchend', () => {
+          if (isSwiping && this.settings.closeOnSwipeUp) {
+            isSwiping = false;
+            cancelLongPress();
             leaf.detach();
             rebuild();
-          }, 500);
-        });
-        tab.addEventListener('touchend', () => {
-          if (longPressTimer !== null) {
-            cancelLongPress();
+            return;
+          }
+
+          if (this.settings.closeOnLongPress) {
+            if (longPressTimer !== null) {
+              cancelLongPress();
+              this.app.workspace.setActiveLeaf(leaf);
+            }
+          } else {
             this.app.workspace.setActiveLeaf(leaf);
           }
         });
-        tab.addEventListener('touchmove', cancelLongPress);
+
+        tab.addEventListener('touchcancel', () => {
+          cancelLongPress();
+          isSwiping = false;
+        });
 
         bar.appendChild(tab);
       }
@@ -102,11 +221,19 @@ export default class MobileTabBar extends Plugin {
         titleContainer.hide();
         titleContainer.classList.add('mtb-hidden');
         const header = container.querySelector('.view-header');
-        if (header && !header.contains(bar)) {
-          if (bar.parentElement) bar.remove();
-          const actions = header.querySelector('.view-actions');
-          if (actions) header.insertBefore(bar, actions);
-          else header.appendChild(bar);
+        if (header) {
+          if (!header.contains(bar)) {
+            if (bar.parentElement) bar.remove();
+            const actions = header.querySelector('.view-actions');
+            if (actions) header.insertBefore(bar, actions);
+            else header.appendChild(bar);
+          }
+          if (!header.contains(addBtn)) {
+            if (addBtn.parentElement) addBtn.remove();
+            const actions = header.querySelector('.view-actions');
+            if (actions) header.insertBefore(addBtn, actions);
+            else header.appendChild(addBtn);
+          }
         }
       }
     };
@@ -136,10 +263,94 @@ export default class MobileTabBar extends Plugin {
     this.register(() => {
       obs.disconnect();
       bar.remove();
+      addBtn.remove();
       activeDocument.querySelectorAll<HTMLElement>('.mtb-hidden').forEach(el => {
         el.show();
         el.classList.remove('mtb-hidden');
       });
     });
+  }
+}
+
+class MobileTabBarSettingTab extends PluginSettingTab {
+  plugin: MobileTabBar;
+
+  constructor(app: App, plugin: MobileTabBar) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        name: 'Plus button note',
+        desc: 'Specify the name or path of the note to open when clicking the circular plus button.',
+        control: {
+          type: 'text',
+          key: 'plusButtonNote',
+          defaultValue: DEFAULT_SETTINGS.plusButtonNote,
+        },
+      },
+      {
+        name: 'Swipe up to close tab',
+        desc: 'Swipe up on a tab in the mobile tab bar to close it.',
+        control: {
+          type: 'toggle',
+          key: 'closeOnSwipeUp',
+          defaultValue: DEFAULT_SETTINGS.closeOnSwipeUp,
+        },
+      },
+      {
+        name: 'Long-press to close tab',
+        desc: 'Long-press on a tab in the mobile tab bar to close it.',
+        control: {
+          type: 'toggle',
+          key: 'closeOnLongPress',
+          defaultValue: DEFAULT_SETTINGS.closeOnLongPress,
+        },
+      },
+    ];
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    new Setting(containerEl)
+      .setName('Plus button note')
+      .setDesc('Specify the note name or vault path to open when clicking the circular plus button.')
+      .addText((text) =>
+        text
+          .setPlaceholder('E.g. Inbox, daily note, or file path')
+          .setValue(this.plugin.settings.plusButtonNote)
+          .onChange(async (value) => {
+            this.plugin.settings.plusButtonNote = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Swipe up to close tab')
+      .setDesc('Swipe up on a tab in the mobile tab bar to close it.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.closeOnSwipeUp)
+          .onChange(async (value) => {
+            this.plugin.settings.closeOnSwipeUp = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Long-press to close tab')
+      .setDesc('Long-press on a tab in the mobile tab bar to close it.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.closeOnLongPress)
+          .onChange(async (value) => {
+            this.plugin.settings.closeOnLongPress = value;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 }

@@ -37,3 +37,32 @@
   background: var(--background-modifier-border);
   border-color: transparent;
 }
+
+.mtb-add-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 50%;
+  margin-left: 6px;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-sizing: border-box;
+}
+
+.mtb-add-tab-btn:hover,
+.mtb-add-tab-btn:active {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.mtb-add-tab-btn svg {
+  width: 16px;
+  height: 16px;
+}

@@ -1,10 +1,10 @@
 {
-	"id": "mobile-tab-bar",
-	"name": "Mobile Tab Bar",
+	"id": "mobile-tab-bar-v2",
+	"name": "Mobile Tab Bar v2",
 	"version": "1.0.2",
 	"minAppVersion": "1.0.0",
 	"description": "Browser-style tab bar for switching between open notes on mobile.",
-	"author": "nnyj",
-	"authorUrl": "https://github.com/nnyj",
+	"author": "shashiosp2",
+	"authorUrl": "https://github.com/shashiosp2",
 	"isDesktopOnly": false
 }
