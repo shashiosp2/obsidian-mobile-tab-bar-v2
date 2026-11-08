@@ -45,6 +45,8 @@ export default class MobileTabBar extends Plugin {
     let startY = 0;
     let isSwiping = false;
 
+    let isScrollingOrMoved = false;
+
     const cancelLongPress = () => {
       if (longPressTimer !== null) {
         window.clearTimeout(longPressTimer);
@@ -108,6 +110,7 @@ export default class MobileTabBar extends Plugin {
         tab.addEventListener('touchstart', (e: TouchEvent) => {
           cancelLongPress();
           isSwiping = false;
+          isScrollingOrMoved = false;
           const touch = e.touches[0];
           if (touch) {
             startX = touch.clientX;
@@ -129,8 +132,9 @@ export default class MobileTabBar extends Plugin {
           const deltaX = touch.clientX - startX;
           const deltaY = touch.clientY - startY;
 
-          // If moved horizontally or vertically beyond threshold, cancel long press
-          if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+          // If moved horizontally or vertically beyond threshold, it is a scroll/drag gesture
+          if (Math.abs(deltaX) > 8 || Math.abs(deltaY) > 8) {
+            isScrollingOrMoved = true;
             cancelLongPress();
           }
 
@@ -142,25 +146,28 @@ export default class MobileTabBar extends Plugin {
         tab.addEventListener('touchend', () => {
           if (isSwiping && this.settings.closeOnSwipeUp) {
             isSwiping = false;
+            isScrollingOrMoved = false;
             cancelLongPress();
             leaf.detach();
             rebuild();
             return;
           }
 
-          if (this.settings.closeOnLongPress) {
-            if (longPressTimer !== null) {
-              cancelLongPress();
-              this.app.workspace.setActiveLeaf(leaf);
-            }
-          } else {
-            this.app.workspace.setActiveLeaf(leaf);
+          // If the finger moved/scrolled, do not switch tabs
+          if (isScrollingOrMoved) {
+            isScrollingOrMoved = false;
+            cancelLongPress();
+            return;
           }
+
+          cancelLongPress();
+          this.app.workspace.setActiveLeaf(leaf);
         });
 
         tab.addEventListener('touchcancel', () => {
           cancelLongPress();
           isSwiping = false;
+          isScrollingOrMoved = false;
         });
 
         bar.appendChild(tab);
